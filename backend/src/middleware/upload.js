@@ -1,23 +1,19 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
 const AppError = require('../utils/AppError');
 const config = require('../config/env');
 
-// Base upload directories
-const UPLOAD_ROOT = path.resolve(__dirname, '../../uploads');
-const VERIFICATION_DOCS_DIR = path.join(UPLOAD_ROOT, 'verification_documents');
-const CANDIDATE_PHOTOS_DIR = path.join(UPLOAD_ROOT, 'candidate_photos');
-const CANDIDATE_CREDENTIALS_DIR = path.join(UPLOAD_ROOT, 'candidate_credentials');
-const FEED_IMAGES_DIR = path.join(UPLOAD_ROOT, 'feed_images');
+// Folder names inside the Supabase Storage bucket (see storageService.js).
+// These replace the old local-disk folder constants.
+const VERIFICATION_DOCS_FOLDER = 'verification_documents';
+const CANDIDATE_PHOTOS_FOLDER = 'candidate_photos';
+const CANDIDATE_CREDENTIALS_FOLDER = 'candidate_credentials';
+const FEED_IMAGES_FOLDER = 'feed_images';
 
-// Ensure directories exist
-[VERIFICATION_DOCS_DIR, CANDIDATE_PHOTOS_DIR, CANDIDATE_CREDENTIALS_DIR, FEED_IMAGES_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+// Files are kept in memory only long enough to be forwarded to Supabase
+// Storage — nothing is written to local disk, which is required on Vercel
+// since its filesystem is read-only outside of /tmp.
+const memoryStorage = multer.memoryStorage();
 
 // Allowed file types
 const ALLOWED_MIME_TYPES = new Set([
@@ -48,25 +44,10 @@ const ALLOWED_IMAGE_EXTENSIONS = new Set([
   '.webp'
 ]);
 
-// Helper for generating sanitized secure random filenames
-function generateSecureFilename(originalname) {
-  const ext = path.extname(originalname).toLowerCase();
-  return `${crypto.randomUUID()}-${Date.now()}${ext}`;
-}
-
-// 1. Storage Configuration for Voter Verification
-const verificationStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, VERIFICATION_DOCS_DIR);
-  },
-  filename: (req, file, cb) => {
-    cb(null, generateSecureFilename(file.originalname));
-  }
-});
-
+// 1. Verification document uploads
 const verificationFileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  
+
   if (!ALLOWED_MIME_TYPES.has(file.mimetype) || !ALLOWED_EXTENSIONS.has(ext)) {
     return cb(new AppError(
       'Invalid file format. Only JPEG, PNG, WEBP images and PDF documents are permitted for student verification.',
@@ -74,34 +55,19 @@ const verificationFileFilter = (req, file, cb) => {
       'INVALID_FILE_TYPE'
     ), false);
   }
-  
+
   cb(null, true);
 };
 
 const uploadVerificationDoc = multer({
-  storage: verificationStorage,
+  storage: memoryStorage,
   fileFilter: verificationFileFilter,
   limits: {
-    fileSize: (config.upload.maxSizeMB || 5) * 1024 * 1024 // 5MB limit
+    fileSize: (config.upload.maxSizeMB || 5) * 1024 * 1024
   }
 });
 
-// 2. Storage & Filter for Candidate Assets (Photo & Credentials)
-const candidateStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    if (file.fieldname === 'photo') {
-      cb(null, CANDIDATE_PHOTOS_DIR);
-    } else if (file.fieldname === 'credentials') {
-      cb(null, CANDIDATE_CREDENTIALS_DIR);
-    } else {
-      cb(new AppError(`Unexpected field '${file.fieldname}' in upload request.`, 400, 'UNEXPECTED_FIELD'));
-    }
-  },
-  filename: (req, file, cb) => {
-    cb(null, generateSecureFilename(file.originalname));
-  }
-});
-
+// 2. Candidate assets (photo & credentials)
 const candidateFileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
@@ -129,23 +95,14 @@ const candidateFileFilter = (req, file, cb) => {
 };
 
 const uploadCandidateAssets = multer({
-  storage: candidateStorage,
+  storage: memoryStorage,
   fileFilter: candidateFileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024
   }
 });
 
-// 3. Storage & Filter for Feed Post Images
-const feedStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, FEED_IMAGES_DIR);
-  },
-  filename: (req, file, cb) => {
-    cb(null, generateSecureFilename(file.originalname));
-  }
-});
-
+// 3. Feed post images
 const feedFileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype) || !ALLOWED_IMAGE_EXTENSIONS.has(ext)) {
@@ -159,10 +116,10 @@ const feedFileFilter = (req, file, cb) => {
 };
 
 const uploadFeedImage = multer({
-  storage: feedStorage,
+  storage: memoryStorage,
   fileFilter: feedFileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 5 * 1024 * 1024
   }
 });
 
@@ -170,10 +127,10 @@ module.exports = {
   uploadVerificationDoc,
   uploadCandidateAssets,
   uploadFeedImage,
-  VERIFICATION_DOCS_DIR,
-  CANDIDATE_PHOTOS_DIR,
-  CANDIDATE_CREDENTIALS_DIR,
-  FEED_IMAGES_DIR,
+  VERIFICATION_DOCS_FOLDER,
+  CANDIDATE_PHOTOS_FOLDER,
+  CANDIDATE_CREDENTIALS_FOLDER,
+  FEED_IMAGES_FOLDER,
   ALLOWED_MIME_TYPES,
   ALLOWED_EXTENSIONS,
   ALLOWED_IMAGE_MIME_TYPES,

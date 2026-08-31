@@ -1,12 +1,11 @@
 const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const AuditService = require('../services/auditService');
 const NotificationService = require('../services/notificationService');
-const { CANDIDATE_PHOTOS_DIR, CANDIDATE_CREDENTIALS_DIR } = require('../middleware/upload');
+const storageService = require('../services/storageService');
+const { CANDIDATE_PHOTOS_FOLDER, CANDIDATE_CREDENTIALS_FOLDER } = require('../middleware/upload');
 
 /**
  * Generate cryptographically secure formatted candidate code: CAND-XXXX-XXXX-XXXX
@@ -285,16 +284,29 @@ async function applyForCandidacy(req, res, next) {
     ));
   }
 
-  // 6. Handle File Uploads (Photo & Credentials)
+  // 6. Handle File Uploads (Photo & Credentials) — uploaded to Supabase Storage
   let photoUrl = null;
   let credentialsPath = null;
 
   if (req.files) {
     if (req.files.photo && req.files.photo.length > 0) {
-      photoUrl = `/api/v1/candidates/photos/${req.files.photo[0].filename}`;
+      const photoFile = req.files.photo[0];
+      const storedPhotoFilename = await storageService.uploadFile(
+        CANDIDATE_PHOTOS_FOLDER,
+        photoFile.buffer,
+        photoFile.originalname,
+        photoFile.mimetype
+      );
+      photoUrl = `/api/v1/candidates/photos/${storedPhotoFilename}`;
     }
     if (req.files.credentials && req.files.credentials.length > 0) {
-      credentialsPath = req.files.credentials[0].filename;
+      const credentialsFile = req.files.credentials[0];
+      credentialsPath = await storageService.uploadFile(
+        CANDIDATE_CREDENTIALS_FOLDER,
+        credentialsFile.buffer,
+        credentialsFile.originalname,
+        credentialsFile.mimetype
+      );
     }
   }
 
@@ -810,14 +822,14 @@ async function getMyApplication(req, res, next) {
  */
 async function serveCandidatePhoto(req, res, next) {
   const { filename } = req.params;
-  const safeFilename = path.basename(filename);
-  const targetPath = path.join(CANDIDATE_PHOTOS_DIR, safeFilename);
 
-  if (!fs.existsSync(targetPath)) {
+  const fileBuffer = await storageService.downloadFile(CANDIDATE_PHOTOS_FOLDER, filename);
+
+  if (!fileBuffer) {
     return next(new AppError('Candidate photograph not found.', 404, 'PHOTO_NOT_FOUND'));
   }
 
-  return res.sendFile(targetPath);
+  return res.send(fileBuffer);
 }
 
 /**
@@ -846,14 +858,16 @@ async function getCandidateCredentialsFile(req, res, next) {
     return next(new AppError('Forbidden: Unauthorized credentials document access.', 403, 'FORBIDDEN_CREDENTIALS_ACCESS'));
   }
 
-  const safeFilename = path.basename(appRecord.credentials_document_path);
-  const targetPath = path.join(CANDIDATE_CREDENTIALS_DIR, safeFilename);
+  const fileBuffer = await storageService.downloadFile(
+    CANDIDATE_CREDENTIALS_FOLDER,
+    appRecord.credentials_document_path
+  );
 
-  if (!fs.existsSync(targetPath)) {
+  if (!fileBuffer) {
     return next(new AppError('The requested credentials file does not exist on storage.', 404, 'FILE_NOT_FOUND'));
   }
 
-  return res.sendFile(targetPath);
+  return res.send(fileBuffer);
 }
 
 module.exports = {

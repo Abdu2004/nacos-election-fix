@@ -1,11 +1,10 @@
-const path = require('path');
-const fs = require('fs');
 const { query } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const AuditService = require('../services/auditService');
 const NotificationService = require('../services/notificationService');
-const { FEED_IMAGES_DIR } = require('../middleware/upload');
+const storageService = require('../services/storageService');
+const { FEED_IMAGES_FOLDER } = require('../middleware/upload');
 
 // ==============================================================================
 // 1. CREATE FEED POST (Administrator, Validator, Candidate)
@@ -51,7 +50,13 @@ async function createPost(req, res, next) {
 
   let finalImageUrl = imageUrl || null;
   if (req.file) {
-    finalImageUrl = `/api/v1/feed/images/${req.file.filename}`;
+    const storedFilename = await storageService.uploadFile(
+      FEED_IMAGES_FOLDER,
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype
+    );
+    finalImageUrl = `/api/v1/feed/images/${storedFilename}`;
   }
 
   // Only Administrator can pin posts
@@ -326,14 +331,14 @@ async function togglePinPost(req, res, next) {
  */
 async function serveFeedImage(req, res, next) {
   const { filename } = req.params;
-  const sanitizedFilename = path.basename(filename);
-  const filePath = path.join(FEED_IMAGES_DIR, sanitizedFilename);
 
-  if (!fs.existsSync(filePath)) {
+  const fileBuffer = await storageService.downloadFile(FEED_IMAGES_FOLDER, filename);
+
+  if (!fileBuffer) {
     return next(new AppError('Feed image not found.', 404, 'IMAGE_NOT_FOUND'));
   }
 
-  return res.sendFile(filePath);
+  return res.send(fileBuffer);
 }
 
 module.exports = {

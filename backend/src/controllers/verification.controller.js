@@ -1,11 +1,10 @@
-const path = require('path');
-const fs = require('fs');
 const { query, withTransaction } = require('../config/db');
 const AppError = require('../utils/AppError');
 const { sendSuccess, sendCreated, sendPaginated } = require('../utils/response');
 const AuditService = require('../services/auditService');
 const NotificationService = require('../services/notificationService');
-const { VERIFICATION_DOCS_DIR } = require('../middleware/upload');
+const storageService = require('../services/storageService');
+const { VERIFICATION_DOCS_FOLDER } = require('../middleware/upload');
 
 /**
  * Upload Student Identification Document
@@ -36,6 +35,14 @@ async function uploadDocument(req, res, next) {
 
   const { documentType = 'STUDENT_ID_CARD' } = req.body;
 
+  // Upload the in-memory file buffer to Supabase Storage instead of local disk
+  const storedFilename = await storageService.uploadFile(
+    VERIFICATION_DOCS_FOLDER,
+    req.file.buffer,
+    req.file.originalname,
+    req.file.mimetype
+  );
+
   const insertOrUpdateSql = `
     INSERT INTO verification_documents (
       user_id, document_type, file_path, original_filename, mime_type, file_size_bytes, verification_status
@@ -46,7 +53,7 @@ async function uploadDocument(req, res, next) {
   const params = [
     user.id,
     documentType,
-    req.file.filename, // Store sanitized filename only
+    storedFilename, // Store the Supabase Storage filename, not a local path
     req.file.originalname,
     req.file.mimetype,
     req.file.size
@@ -162,16 +169,15 @@ async function getDocumentFile(req, res, next) {
     return next(new AppError('Unauthorized access to private verification document.', 403, 'FORBIDDEN_DOCUMENT_ACCESS'));
   }
 
-  // Path Traversal Security: Ensure target file resides strictly within VERIFICATION_DOCS_DIR
-  const safeFilePath = path.join(VERIFICATION_DOCS_DIR, path.basename(doc.file_path));
+  const fileBuffer = await storageService.downloadFile(VERIFICATION_DOCS_FOLDER, doc.file_path);
 
-  if (!fs.existsSync(safeFilePath)) {
+  if (!fileBuffer) {
     return next(new AppError('The requested document file does not exist on storage.', 404, 'FILE_NOT_FOUND'));
   }
 
   res.setHeader('Content-Type', doc.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${doc.original_filename}"`);
-  return res.sendFile(safeFilePath);
+  return res.send(fileBuffer);
 }
 
 /**

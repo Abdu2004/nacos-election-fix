@@ -29,8 +29,12 @@ const config = {
     from: process.env.EMAIL_FROM || 'noreply@student-election.local'
   },
   upload: {
-    maxSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10),
-    dir: process.env.UPLOAD_DIR || './uploads'
+    maxSizeMB: parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10)
+  },
+  supabase: {
+    url: process.env.SUPABASE_URL || '',
+    serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    bucket: process.env.SUPABASE_STORAGE_BUCKET || 'election-uploads'
   }
 };
 
