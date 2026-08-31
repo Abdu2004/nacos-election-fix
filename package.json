@@ -1,0 +1,26 @@
+{
+  "name": "student-election-system",
+  "version": "1.0.0",
+  "description": "Web-Based Student Election Management System",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend start",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:start": "npm --prefix backend start",
+    "backend:test": "npm --prefix backend test",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:seed": "npm --prefix backend run db:seed",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:preview": "npm --prefix frontend run preview",
+    "test": "npm --prefix backend test"
+  },
+  "keywords": [
+    "election",
+    "voting",
+    "management-system"
+  ],
+  "author": "Student Election System Team",
+  "license": "ISC"
+}
